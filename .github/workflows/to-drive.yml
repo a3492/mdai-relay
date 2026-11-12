@@ -1,0 +1,36 @@
+name: release-to-drive
+on:
+  release:
+    types: [published]
+permissions:
+  contents: write
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install rclone
+        run: curl -fsSL https://rclone.org/install.sh | sudo bash
+      - name: Download assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          mkdir out
+          gh release download "$TAG" --repo "${{ github.repository }}" --dir out
+      - name: Upload to Drive
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+          DEST: ${{ github.event.release.body }}
+        run: |
+          mkdir -p ~/.config/rclone
+          printf '%s' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+          DEST="$(printf '%s' "$DEST" | tr -d '\r' | head -n1)"
+          case "$DEST" in ""|*..*|/*) echo "bad DEST: $DEST"; exit 1;; esac
+          BASE="gdrive:컨텐츠/클로드 컨텐츠/오늘의MDAI_카드뉴스"
+          rclone copy out "$BASE/$DEST"
+          test "$(rclone lsf "$BASE/$DEST" | wc -l)" -ge "$(ls out | wc -l)"
+      - name: Delete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release delete "$TAG" --cleanup-tag --yes --repo "${{ github.repository }}"
